@@ -1,4 +1,3 @@
-import faiss
 from langchain_openai import OpenAIEmbeddings
 from langchain_community.vectorstores import FAISS
 
