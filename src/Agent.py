@@ -7,18 +7,21 @@ from dotenv import load_dotenv
 from langchain.memory import ConversationBufferMemory
 load_dotenv()
 from db_utils import get_redshift_schema_info, query_redshift, REDSHIFT_SCHEMA
+from schema_vector import build_schema_vectorstore, select_relevant_tables_vector
 
 # Utility to ensure history is always List[str]
 def ensure_str_list(history) -> list[str]:
     return [str(h) for h in history if isinstance(h, (str, int, float, bool))]
 
 # Define the application state with memory (history)
+
 class State(TypedDict):
     question: str
     query: str
     result: str
     answer: str
     history: List[str]
+    schema_subset: str
 
 # Initialize the LLM
 llm = ChatOpenAI(model="gpt-4o", temperature=0)
@@ -44,23 +47,42 @@ query_prompt_template = ChatPromptTemplate(
     ]
 )
 
+class TableSubsetOutput(TypedDict):
+    tables: Annotated[str, ..., "Subset of schema_info with only relevant tables for the query."]
 
 class QueryOutput(TypedDict):
     query: Annotated[str, ..., "Syntactically valid SQL query."]
 
 
+# Fetch schema_info and build vectorstore once at startup
+SCHEMA_INFO = get_redshift_schema_info(REDSHIFT_SCHEMA)
+SCHEMA_VECTORSTORE = build_schema_vectorstore(SCHEMA_INFO)
 
-
-# Function to write the SQL query
-def write_query(state: State) -> State:
-    """Generate SQL query to fetch information."""
+# Step 1: Select relevant tables from schema_info using FAISS vector search
+def select_tables(state: State) -> State:
+    """Select relevant tables from schema_info for the user's question using vector search."""
     history: list[str] = ensure_str_list(state.get("history", []))
-    schema_info = get_redshift_schema_info(REDSHIFT_SCHEMA)
+    relevant_subset = select_relevant_tables_vector(state["question"], SCHEMA_VECTORSTORE, top_k=5)
+    new_history: list[str] = history + [f"User: {state['question']}", f"Relevant tables: {relevant_subset}"]
+    return {
+        "question": state["question"],
+        "query": state["query"],
+        "result": state["result"],
+        "answer": state["answer"],
+        "history": ensure_str_list(new_history),
+        "schema_subset": relevant_subset
+    }
+
+# Step 2: Generate SQL query using schema subset
+def generate_query(state: State) -> State:
+    """Generate SQL query to fetch information using schema subset."""
+    history: list[str] = ensure_str_list(state.get("history", []))
+    schema_subset = state.get("schema_subset", "")
     prompt = query_prompt_template.invoke(
         {
             "input": state["question"],
             "history": history,
-            "table_info": schema_info,
+            "table_info": schema_subset,
             "schema": REDSHIFT_SCHEMA
         }
     )
@@ -72,9 +94,9 @@ def write_query(state: State) -> State:
         "query": result["query"],
         "result": state["result"],
         "answer": state["answer"],
-        "history": ensure_str_list(new_history)
+        "history": ensure_str_list(new_history),
+        "schema_subset": schema_subset
     }
-
 
 # Function to execute the SQL query
 def execute_query(state: State) -> State:
@@ -88,9 +110,9 @@ def execute_query(state: State) -> State:
         "query": state["query"],
         "result": result_str,
         "answer": state["answer"],
-        "history": ensure_str_list(new_history)
+        "history": ensure_str_list(new_history),
+        "schema_subset": state.get("schema_subset", "")
     }
-
 
 # Define the prompt for generating the answer, including history
 answer_system_message = """You are a helpful AI assistant. Given the user's question and the SQL query result, \
@@ -124,19 +146,21 @@ def generate_answer(state: State) -> State:
         "query": str(state["query"]),
         "result": str(state["result"]),
         "answer": str(answer),
-        "history": ensure_str_list(new_history)
+        "history": ensure_str_list(new_history),
+        "schema_subset": state.get("schema_subset", "")
     }
-
 
 # Build the LangGraph workflow
 workflow = StateGraph(State)
 
-workflow.add_node("write_query", write_query)
+workflow.add_node("select_tables", select_tables)
+workflow.add_node("generate_query", generate_query)
 workflow.add_node("execute_query", execute_query)
 workflow.add_node("generate_answer", generate_answer)
 
-workflow.set_entry_point("write_query")
-workflow.add_edge("write_query", "execute_query")
+workflow.set_entry_point("select_tables")
+workflow.add_edge("select_tables", "generate_query")
+workflow.add_edge("generate_query", "execute_query")
 workflow.add_edge("execute_query", "generate_answer")
 workflow.add_edge("generate_answer", END)
 
@@ -160,7 +184,8 @@ if __name__ == "__main__":
             "query": "",
             "result": "",
             "answer": "",
-            "history": safe_history
+            "history": safe_history,
+            "schema_subset": ""
         }
         result = app.invoke(state)
         print(f"\n📊 Answer: {result['answer']}")

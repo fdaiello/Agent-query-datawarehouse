@@ -5,3 +5,6 @@ boto3
 python-dotenv
 langchain-core
 langgraph
+faiss-cpu
+langchain-community
+langchain-openai
