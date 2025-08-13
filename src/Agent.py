@@ -1,22 +1,12 @@
-import os
+
 from typing import TypedDict, Annotated, List
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langgraph.graph import StateGraph, END
 from langchain_openai import ChatOpenAI
 from dotenv import load_dotenv
 from langchain.memory import ConversationBufferMemory
-import boto3
-
-# Load .env for API keys and DB credentials
 load_dotenv()
-
-REDSHIFT_SCHEMA = os.getenv("REDSHIFT_SCHEMA", "dg1")
-AWS_REGION = os.getenv("AWS_REGION")
-REDSHIFT_WORKGROUP_NAME = os.getenv("REDSHIFT_WORKGROUP_NAME")
-REDSHIFT_DATABASE = os.getenv("REDSHIFT_DATABASE")
-REDSHIFT_SCHEMA = os.getenv("REDSHIFT_SCHEMA", "dg1")
-
-redshift_client = boto3.client("redshift-data", region_name=AWS_REGION)
+from db_utils import get_redshift_schema_info, query_redshift, REDSHIFT_SCHEMA
 
 # Utility to ensure history is always List[str]
 def ensure_str_list(history) -> list[str]:
@@ -29,7 +19,6 @@ class State(TypedDict):
     result: str
     answer: str
     history: List[str]
-
 
 # Initialize the LLM
 llm = ChatOpenAI(model="gpt-4o", temperature=0)
@@ -60,83 +49,7 @@ class QueryOutput(TypedDict):
     query: Annotated[str, ..., "Syntactically valid SQL query."]
 
 
-def get_redshift_schema_info(schema: str) -> str:
-    """
-    Fetch table and column info from Redshift and format as a string for prompt context.
-    """
-    sql = f"""
-    SELECT table_name, column_name, data_type
-    FROM information_schema.columns
-    WHERE table_schema = '{schema}'
-    ORDER BY table_name, ordinal_position
-    """
-    try:
-        res = redshift_client.execute_statement(
-            WorkgroupName=REDSHIFT_WORKGROUP_NAME,
-            Database=REDSHIFT_DATABASE,
-            Sql=sql
-        )
-        query_id = res["Id"]
-        while True:
-            status = redshift_client.describe_statement(Id=query_id)
-            if status["Status"] in ["FINISHED", "FAILED", "ABORTED"]:
-                break
-        if status["Status"] != "FINISHED":
-            return "(Could not fetch schema info)"
-        result = redshift_client.get_statement_result(Id=query_id)
-        columns = [col["name"] for col in result["ColumnMetadata"]]
-        rows = [
-            dict(zip(columns, [v.get("stringValue", "") for v in row]))
-            for row in result["Records"]
-        ]
-        # Format as: Table: ...\n  col1 (type), col2 (type)...
-        table_map = {}
-        for row in rows:
-            t = row["table_name"]
-            c = row["column_name"]
-            d = row["data_type"]
-            table_map.setdefault(t, []).append(f"{c} ({d})")
-        lines = []
-        for t, cols in table_map.items():
-            lines.append(f"Table: {t}\n  " + ", ".join(cols))
-        return "\n".join(lines)
-    except Exception as e:
-        return f"(Error fetching schema info: {str(e)})"
 
-def query_redshift(sql: str) -> str:
-    """
-    Run a SQL query against AWS Redshift Serverless using the Data API and return results as a string.
-    """
-    try:
-        # Submit query
-        res = redshift_client.execute_statement(
-            WorkgroupName=REDSHIFT_WORKGROUP_NAME,
-            Database=REDSHIFT_DATABASE,
-            Sql=sql
-        )
-        query_id = res["Id"]
-
-        # Wait for completion
-        while True:
-            status = redshift_client.describe_statement(Id=query_id)
-            if status["Status"] in ["FINISHED", "FAILED", "ABORTED"]:
-                break
-
-        if status["Status"] != "FINISHED":
-            return f"Query failed: {status.get('Error', 'Unknown error')}"
-
-        # Fetch results
-        result = redshift_client.get_statement_result(Id=query_id)
-        # Format nicely
-        columns = [col["name"] for col in result["ColumnMetadata"]]
-        rows = [
-            dict(zip(columns, [v.get("stringValue", "") for v in row]))
-            for row in result["Records"]
-        ]
-        return str(rows)
-
-    except Exception as e:
-        return f"Error running query: {str(e)}"
 
 # Function to write the SQL query
 def write_query(state: State) -> State:
@@ -207,10 +120,10 @@ def generate_answer(state: State) -> State:
     answer = llm.invoke(prompt).content
     new_history: list[str] = history + [f"Answer: {answer}"]
     return {
-        "question": state["question"],
-        "query": state["query"],
-        "result": state["result"],
-        "answer": answer,
+        "question": str(state["question"]),
+        "query": str(state["query"]),
+        "result": str(state["result"]),
+        "answer": str(answer),
         "history": ensure_str_list(new_history)
     }
 
