@@ -6,8 +6,8 @@ from langchain_openai import ChatOpenAI
 from dotenv import load_dotenv
 from langchain.memory import ConversationBufferMemory
 load_dotenv()
-from db_utils import get_redshift_schema_info, query_redshift, REDSHIFT_SCHEMA
-from schema_vector import build_schema_vectorstore, select_relevant_tables_vector
+from db_utils import get_redshift_schema_info, get_tables, query_redshift, REDSHIFT_SCHEMA
+from schema_vector import create_vectorstore, search_vectorstore
 
 # Utility to ensure history is always List[str]
 def ensure_str_list(history) -> list[str]:
@@ -21,7 +21,7 @@ class State(TypedDict):
     result: str
     answer: str
     history: List[str]
-    schema_subset: str
+    schema_subset: List[str]
 
 # Initialize the LLM
 llm = ChatOpenAI(model="gpt-4o", temperature=0)
@@ -55,14 +55,29 @@ class QueryOutput(TypedDict):
 
 
 # Fetch schema_info and build vectorstore once at startup
-SCHEMA_INFO = get_redshift_schema_info(REDSHIFT_SCHEMA)
-SCHEMA_VECTORSTORE = build_schema_vectorstore(SCHEMA_INFO)
+TABLE_INFO = get_tables(REDSHIFT_SCHEMA)
 
-# Step 1: Select relevant tables from schema_info using FAISS vector search
+
+# Step 1: Use LLM to select relevant tables from TABLE_INFO
 def select_tables(state: State) -> State:
-    """Select relevant tables from schema_info for the user's question using vector search."""
+    """Call LLM to decide which tables should be used for the user's question."""
     history: list[str] = ensure_str_list(state.get("history", []))
-    relevant_subset = select_relevant_tables_vector(state["question"], SCHEMA_VECTORSTORE, top_k=5)
+    # Prepare table info string for LLM
+    table_list_str = "\n".join([f"{t['table_name']}: {t['table_comment']}" for t in TABLE_INFO])
+    prompt = ChatPromptTemplate([
+        ("system", "You are a helpful assistant. Given the user's question and the list of tables with descriptions, return a Python list of table names that are relevant for answering the question. Only include table names, no comments or extra text."),
+        ("user", f"Question: {state['question']}\nTables:\n{table_list_str}")
+    ])
+    result = llm.invoke(prompt.invoke({})).content
+    # Try to safely parse the result as a Python list of strings
+    import ast
+    relevant_subset: List[str] = []
+    try:
+        parsed = ast.literal_eval(result) if isinstance(result, str) else []
+        if isinstance(parsed, list):
+            relevant_subset = [str(x) for x in parsed if isinstance(x, str)]
+    except Exception:
+        relevant_subset = []
     new_history: list[str] = history + [f"User: {state['question']}", f"Relevant tables: {relevant_subset}"]
     return {
         "question": state["question"],
@@ -77,12 +92,14 @@ def select_tables(state: State) -> State:
 def generate_query(state: State) -> State:
     """Generate SQL query to fetch information using schema subset."""
     history: list[str] = ensure_str_list(state.get("history", []))
-    schema_subset = state.get("schema_subset", "")
+    schema_subset = state.get("schema_subset", [])
+    # Convert schema_subset list to string for prompt
+    schema_subset_str = ", ".join(schema_subset)
     prompt = query_prompt_template.invoke(
         {
             "input": state["question"],
             "history": history,
-            "table_info": schema_subset,
+            "table_info": schema_subset_str,
             "schema": REDSHIFT_SCHEMA
         }
     )
@@ -111,7 +128,7 @@ def execute_query(state: State) -> State:
         "result": result_str,
         "answer": state["answer"],
         "history": ensure_str_list(new_history),
-        "schema_subset": state.get("schema_subset", "")
+        "schema_subset": state.get("schema_subset", [])
     }
 
 # Define the prompt for generating the answer, including history
@@ -147,7 +164,7 @@ def generate_answer(state: State) -> State:
         "result": str(state["result"]),
         "answer": str(answer),
         "history": ensure_str_list(new_history),
-        "schema_subset": state.get("schema_subset", "")
+        "schema_subset": state.get("schema_subset", [])
     }
 
 # Build the LangGraph workflow
@@ -185,7 +202,7 @@ if __name__ == "__main__":
             "result": "",
             "answer": "",
             "history": safe_history,
-            "schema_subset": ""
+            "schema_subset": []
         }
         result = app.invoke(state)
         print(f"\n📊 Answer: {result['answer']}")
