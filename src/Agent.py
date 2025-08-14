@@ -82,7 +82,7 @@ def select_tables_llm(state: State) -> State:
     # Prepare table info string for LLM
     table_list_str = "\n".join([f"{t['table_name']}: {t['table_comment']}" for t in TABLE_INFO])
     prompt = ChatPromptTemplate([
-        ("system", "You are a helpful assistant. Given the user's question and the list of tables with descriptions, return a comma separated list of table names that are relevant for answering the question. Only include table names, no comments or extra text."),
+        ("system", "Given the user's question and the list of tables with descriptions, return a comma separated list of table names that are relevant for answering the question in order of relevance."),
         ("user", f"Question: {state['question']}\nTables:\n{table_list_str}")
     ])
     result = llm.invoke(prompt.invoke({})).content
@@ -185,7 +185,7 @@ def generate_answer(state: State) -> State:
 # Build the LangGraph workflow
 workflow = StateGraph(State)
 
-workflow.add_node("select_tables", select_tables_vector)
+workflow.add_node("select_tables", select_tables_llm)
 workflow.add_node("generate_query", generate_query)
 workflow.add_node("execute_query", execute_query)
 workflow.add_node("generate_answer", generate_answer)

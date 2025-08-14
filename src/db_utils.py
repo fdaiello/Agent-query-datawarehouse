@@ -91,14 +91,16 @@ def get_columns(schema: str) -> List[Dict[str, str]]:
             c.data_type,
             d.description AS column_comment
         FROM information_schema.columns c
-        LEFT JOIN pg_catalog.pg_class cls
+        JOIN pg_catalog.pg_class cls
             ON cls.relname = c.table_name
-        LEFT JOIN pg_catalog.pg_namespace ns
-            ON ns.nspname = c.table_schema AND ns.oid = cls.relnamespace
+        JOIN pg_catalog.pg_namespace ns
+            ON ns.nspname = c.table_schema
+        AND ns.oid = cls.relnamespace
         LEFT JOIN pg_catalog.pg_description d
-            ON d.objoid = cls.oid AND d.objsubid = c.ordinal_position
+            ON d.objoid = cls.oid
+        AND d.objsubid = c.ordinal_position
         WHERE c.table_schema = '{schema}'
-        ORDER BY c.table_name, c.ordinal_position
+        ORDER BY c.table_name, c.ordinal_position;
     """
     try:
         res = redshift_client.execute_statement(
