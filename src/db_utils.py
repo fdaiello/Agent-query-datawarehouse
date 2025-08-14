@@ -9,6 +9,38 @@ REDSHIFT_DATABASE = os.getenv("REDSHIFT_DATABASE")
 
 redshift_client = boto3.client("redshift-data", region_name=AWS_REGION)
 
+def get_schema_comment(schema: str) -> str:
+    """
+    Returns the comment for the given schema, or an empty string if none exists.
+    """
+    sql = f"""
+    SELECT
+        d.description AS schema_comment
+    FROM pg_catalog.pg_namespace n
+    LEFT JOIN pg_catalog.pg_description d
+        ON n.oid = d.objoid
+    WHERE n.nspname = '{schema}'
+    """
+    try:
+        res = redshift_client.execute_statement(
+            WorkgroupName=REDSHIFT_WORKGROUP_NAME,
+            Database=REDSHIFT_DATABASE,
+            Sql=sql
+        )
+        query_id = res["Id"]
+        while True:
+            status = redshift_client.describe_statement(Id=query_id)
+            if status["Status"] in ["FINISHED", "FAILED", "ABORTED"]:
+                break
+        if status["Status"] != "FINISHED":
+            return ""
+        result = redshift_client.get_statement_result(Id=query_id)
+        if result["Records"]:
+            return result["Records"][0][0].get("stringValue", "")
+        return ""
+    except Exception:
+        return ""
+    
 def get_tables(schema: str) -> List[Dict[str, str]]:
     """
     Returns a string with one line for each database table: table_name -- table_comment
@@ -47,9 +79,10 @@ def get_tables(schema: str) -> List[Dict[str, str]]:
     except Exception as e:
         return []
     
-def get_redshift_schema_info(schema: str) -> str:
+def get_columns(schema: str) -> List[Dict[str, str]]:
     """
-    Fetch table and column info from Redshift and format as a string for prompt context.
+    Fetch table and column info from Redshift and return as a list of dicts.
+    Each dict contains table_name, column_name, and data_type.
     """
     sql = f"""
     SELECT table_name, column_name, data_type
@@ -69,25 +102,23 @@ def get_redshift_schema_info(schema: str) -> str:
             if status["Status"] in ["FINISHED", "FAILED", "ABORTED"]:
                 break
         if status["Status"] != "FINISHED":
-            return "(Could not fetch schema info)"
+            return []
         result = redshift_client.get_statement_result(Id=query_id)
         columns = [col["name"] for col in result["ColumnMetadata"]]
         rows = [
             dict(zip(columns, [v.get("stringValue", "") for v in row]))
             for row in result["Records"]
         ]
-        table_map = {}
-        for row in rows:
-            t = row["table_name"]
-            c = row["column_name"]
-            d = row["data_type"]
-            table_map.setdefault(t, []).append(f"{c} ({d})")
-        lines = []
-        for t, cols in table_map.items():
-            lines.append(f"Table: {t}\n  " + ", ".join(cols))
-        return "\n".join(lines)
-    except Exception as e:
-        return f"(Error fetching schema info: {str(e)})"
+        return rows
+    except Exception:
+        return []
+
+def filter_columns(columns: List[Dict[str, str]], table_names: List[str]) -> List[Dict[str, str]]:
+    """
+    Filters the columns list to only rows where table_name is in table_names.
+    Returns a list of dicts for those tables.
+    """
+    return [row for row in columns if row.get("table_name") in table_names]
 
 def query_redshift(sql: str) -> str:
     """

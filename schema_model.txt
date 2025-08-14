@@ -1,7 +1,7 @@
-Schema:
-Table: contacts
-Description: Primary customer table...
+Table: table_name
+Description: table_comments
 Columns:
-- contact_id (integer) — Primary key.
-- first_name (text) — First name of contact.
-- last_name (text) — Last name of contact.
+- column_name (data_type)
+- column_name (data_type)
+- column_name (data_type)
+
