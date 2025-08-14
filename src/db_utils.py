@@ -85,10 +85,20 @@ def get_columns(schema: str) -> List[Dict[str, str]]:
     Each dict contains table_name, column_name, and data_type.
     """
     sql = f"""
-    SELECT table_name, column_name, data_type
-    FROM information_schema.columns
-    WHERE table_schema = '{schema}'
-    ORDER BY table_name, ordinal_position
+        SELECT
+            c.table_name,
+            c.column_name,
+            c.data_type,
+            d.description AS column_comment
+        FROM information_schema.columns c
+        LEFT JOIN pg_catalog.pg_class cls
+            ON cls.relname = c.table_name
+        LEFT JOIN pg_catalog.pg_namespace ns
+            ON ns.nspname = c.table_schema AND ns.oid = cls.relnamespace
+        LEFT JOIN pg_catalog.pg_description d
+            ON d.objoid = cls.oid AND d.objsubid = c.ordinal_position
+        WHERE c.table_schema = '{schema}'
+        ORDER BY c.table_name, c.ordinal_position
     """
     try:
         res = redshift_client.execute_statement(
@@ -139,8 +149,14 @@ def query_redshift(sql: str) -> str:
             return f"Query failed: {status.get('Error', 'Unknown error')}"
         result = redshift_client.get_statement_result(Id=query_id)
         columns = [col["name"] for col in result["ColumnMetadata"]]
+        def extract_value(v):
+            # Redshift Data API returns one of these keys depending on type
+            for key in ("stringValue", "longValue", "doubleValue", "booleanValue", "arrayValue"): 
+                if key in v:
+                    return v[key]
+            return ""
         rows = [
-            dict(zip(columns, [v.get("stringValue", "") for v in row]))
+            dict(zip(columns, [extract_value(v) for v in row]))
             for row in result["Records"]
         ]
         return str(rows)
