@@ -1,3 +1,4 @@
+import os
 from typing import TypedDict, Annotated, List
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langgraph.graph import StateGraph, END
@@ -8,6 +9,8 @@ load_dotenv()
 from db_utils import get_columns, get_tables, query_redshift, get_schema_comment, REDSHIFT_SCHEMA
 from schema_vector import create_vectorstore, search_vectorstore
 from schema_format import format_schema_description
+
+REDSHIFT_SCHEMA = os.getenv("REDSHIFT_SCHEMA")
 
 # Utility to ensure history is always List[str]
 def ensure_str_list(history) -> list[str]:

@@ -2,7 +2,7 @@ import os
 import boto3
 from typing import List, Dict
 
-REDSHIFT_SCHEMA = os.getenv("REDSHIFT_SCHEMA", "dg1")
+REDSHIFT_SCHEMA = os.getenv("REDSHIFT_SCHEMA")
 AWS_REGION = os.getenv("AWS_REGION")
 REDSHIFT_WORKGROUP_NAME = os.getenv("REDSHIFT_WORKGROUP_NAME")
 REDSHIFT_DATABASE = os.getenv("REDSHIFT_DATABASE")
