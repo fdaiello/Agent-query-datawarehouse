@@ -10,7 +10,7 @@ from db_utils import get_columns, get_tables, query_redshift, get_schema_comment
 from schema_vector import create_vectorstore, search_vectorstore
 from schema_format import format_schema_description
 
-REDSHIFT_SCHEMA = os.getenv("REDSHIFT_SCHEMA")
+REDSHIFT_SCHEMA = os.getenv("REDSHIFT_SCHEMA",'public')
 
 # Utility to ensure history is always List[str]
 def ensure_str_list(history) -> list[str]:
@@ -57,7 +57,7 @@ class TableSubsetOutput(TypedDict):
 class QueryOutput(TypedDict):
     query: Annotated[str, ..., "Syntactically valid SQL query."]
 
-# Fetch schema_info and build vectorstore once at startup
+# Fetch schema_info and build vector store once at startup
 TABLE_INFO = get_tables(REDSHIFT_SCHEMA)
 SCHEMA_COMMENTS = get_schema_comment(REDSHIFT_SCHEMA)
 TABLE_VECTORSTORE = create_vectorstore(TABLE_INFO)
