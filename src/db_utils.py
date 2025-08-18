@@ -54,7 +54,7 @@ def get_tables(schema: str) -> List[Dict[str, str]]:
     JOIN pg_class c ON c.relnamespace = n.oid
     WHERE c.relkind = 'r'
     AND n.nspname = '{schema}'
-    AND obj_description(c.oid) is not null
+    AND (table_comment IS NULL OR table_comment != 'hidden');
     """
     try:
         res = redshift_client.execute_statement(

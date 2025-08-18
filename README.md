@@ -45,6 +45,13 @@ You can modify the agent to use JDBC or other database drivers (e.g., PostgreSQL
    python src/sql_agent_rda.py
    ```
 
+## Comments
+- Schema should use names that are clear. If further data is needed use database COMMENT on schema, table and column level to describe them. If you wish to remove tables from queries, add comment with 'hidden' text.
+
+   COMMENT ON SCHEMA my_schema IS 'This is a schema comment';
+   COMMENT ON TABLE my_schema.my_table IS 'This is a table comment';
+   COMMENT ON COLUMN my_schema.my_table.my_column IS 'This is a column comment';
+
 ## Notes
 - The agent is stateless and works with Redshift Serverless.
 - For other databases, replace the Redshift-specific code with your preferred connection method.
