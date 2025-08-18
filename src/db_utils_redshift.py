@@ -2,10 +2,12 @@ import os
 import boto3
 from typing import List, Dict
 
-REDSHIFT_SCHEMA = os.getenv("REDSHIFT_SCHEMA")
+DB_SCHEMA = os.getenv("REDSHIFT_SCHEMA", 'public')
 AWS_REGION = os.getenv("AWS_REGION")
 REDSHIFT_WORKGROUP_NAME = os.getenv("REDSHIFT_WORKGROUP_NAME")
 REDSHIFT_DATABASE = os.getenv("REDSHIFT_DATABASE")
+DB_PLATFORM = "AWS Redshift"
+DB_SPECIFICS = ""
 
 redshift_client = boto3.client("redshift-data", region_name=AWS_REGION)
 
@@ -132,7 +134,7 @@ def filter_columns(columns: List[Dict[str, str]], table_names: List[str]) -> Lis
     """
     return [row for row in columns if row.get("table_name") in table_names]
 
-def query_redshift(sql: str) -> str:
+def query_database(sql: str) -> str:
     """
     Run a SQL query against AWS Redshift Serverless using the Data API and return results as a string.
     """

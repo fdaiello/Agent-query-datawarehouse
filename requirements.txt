@@ -8,3 +8,4 @@ langgraph
 faiss-cpu
 langchain-community
 langchain-openai
+pyodbc

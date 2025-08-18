@@ -6,11 +6,9 @@ from langchain_openai import ChatOpenAI
 from dotenv import load_dotenv
 from langchain.memory import ConversationBufferMemory
 load_dotenv()
-from db_utils import get_columns, get_tables, query_redshift, get_schema_comment, REDSHIFT_SCHEMA
+from db_utils_redshift import get_columns, get_tables, query_database, get_schema_comment, DB_SCHEMA, DB_PLATFORM, DB_SPECIFICS
 from schema_vector import create_vectorstore, search_vectorstore
 from schema_format import format_schema_description
-
-REDSHIFT_SCHEMA = os.getenv("REDSHIFT_SCHEMA",'public')
 
 # Utility to ensure history is always List[str]
 def ensure_str_list(history) -> list[str]:
@@ -33,13 +31,13 @@ llm = ChatOpenAI(model="gpt-4o", temperature=0)
 memory = ConversationBufferMemory(return_messages=True)
 
 # Define the prompt for generating SQL queries, including history
-system_message = """You are a helpful assistant.
-Generate syntactically correct Redshift SQL queries based on the user's question.
+system_message ="""You are a helpful assistant.
+Generate syntactically correct SQL queries based on the user's question.
+Target database: {db_platform}. {db_specifics}
 Unless the user specifies in their question a specific number of examples they wish to obtain, always limit your query to at most 10 results.
 Database has several schemas. Always work on the schema {schema}.
 Pay attention to use only the column names that you can see in the schema description.
 Never query for all the columns from a specific table, only ask for a few relevant columns given the question.
-Be careful to not query for columns that do not exist. Also, pay attention to which column is in which table.
 Domain specific knowledge:{schema_comments}
 Database schema: {db_schema_str}"""
 user_prompt = "Question: {input}"
@@ -58,10 +56,10 @@ class QueryOutput(TypedDict):
     query: Annotated[str, ..., "Syntactically valid SQL query."]
 
 # Fetch schema_info and build vector store once at startup
-TABLE_INFO = get_tables(REDSHIFT_SCHEMA)
-SCHEMA_COMMENTS = get_schema_comment(REDSHIFT_SCHEMA)
+TABLE_INFO = get_tables(DB_SCHEMA)
+SCHEMA_COMMENTS = get_schema_comment(DB_SCHEMA)
 TABLE_VECTORSTORE = create_vectorstore(TABLE_INFO)
-COLUMNS_INFO = get_columns(REDSHIFT_SCHEMA)
+COLUMNS_INFO = get_columns(DB_SCHEMA)
 
 # Step 1 (Vector Search): use vector search to select relevant table
 def select_tables_vector(state: State) -> State:
@@ -117,7 +115,9 @@ def generate_query(state: State) -> State:
             "input": state["question"],
             "history": history,
             "db_schema_str": db_schema_str,
-            "schema": REDSHIFT_SCHEMA,
+            "schema": DB_SCHEMA,
+            "db_platform": DB_PLATFORM,
+            "db_specifics": DB_SPECIFICS,
             "schema_comments": SCHEMA_COMMENTS
         }
     )
@@ -136,7 +136,7 @@ def generate_query(state: State) -> State:
 # Function to execute the SQL query
 def execute_query(state: State) -> State:
     """Execute the SQL query using Redshift Data API and return the result."""
-    result = query_redshift(state["query"])
+    result = query_database(state["query"])
     result_str = str(result)
     history: list[str] = ensure_str_list(state.get("history", []))
     new_history: list[str] = history + [f"SQL: {state['query']}", f"Result: {result_str}"]

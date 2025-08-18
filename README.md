@@ -19,10 +19,20 @@ This version uses the **AWS Redshift Data API** to connect to Redshift Serverles
 - Conversation history is maintained for context.
 
 ## Adapting to Other Databases
-You can modify the agent to use JDBC or other database drivers (e.g., PostgreSQL, MySQL, SQLite) by:
-- Replacing the Redshift Data API logic with a JDBC or Python DB-API connection.
-- Adjusting the schema introspection function to match your database.
-- Updating environment variables and connection details.
+
+Current code support Redsfhit and Azure SQL.
+For other versions, write a new db_utils_<your_db> code
+Adjust needed environment variables.
+Change Agent.py line 9 to adjust to your library:
+
+   from db_utils_redshift ...
+
+For Azure SQL you need to install a driver
+
+   brew tap microsoft/mssql-release https://github.com/Microsoft/homebrew-mssql-release
+   brew update
+   ACCEPT_EULA=Y brew install msodbcsql18
+
 
 ## Setup
 1. Clone the repository.
