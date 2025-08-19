@@ -1,6 +1,8 @@
-# Agent-query-database
+# Agent-query-datawarehouse
 
 This project is a GenAI-powered agent that answers natural language questions by querying a database. It is designed for extensibility and can be adapted to different database backends.
+
+It can work with schemas with many tables and many columns. It works in 3 steps. First it determines the needed tables for the user query. Then it builds the SQL and query database. At the end it formats the output.
 
 ## Redshift Data API (Serverless)
 
