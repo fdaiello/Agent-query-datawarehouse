@@ -24,8 +24,24 @@ class State(TypedDict):
     history: List[str]
     table_list: List[str]
 
-# Initialize the LLM
-llm = ChatOpenAI(model="gpt-4.1", temperature=0)
+
+# Initialize the LLM based on environment variables
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai").lower()
+
+llm = None
+if LLM_PROVIDER == "openai":
+    from langchain_openai import ChatOpenAI
+    OPENAI_MODEL_ID = os.getenv("OPENAI_MODEL_ID", "gpt-4.1")
+    llm = ChatOpenAI(model=OPENAI_MODEL_ID, temperature=0)
+elif LLM_PROVIDER == "bedrock":
+    from langchain_aws import ChatBedrock
+    BEDROCK_PROVIDER = os.getenv("BEDROCK_PROVIDER", "anthropic")
+    BEDROCK_REGION = os.getenv("BEDROCK_REGION", "us-east-1")
+    BEDROCK_INFERENCE_PROFILE_ID = os.getenv("BEDROCK_INFERENCE_PROFILE_ID")
+    bedrock_kwargs = {"model_id": BEDROCK_INFERENCE_PROFILE_ID, "provider": BEDROCK_PROVIDER, "region": BEDROCK_REGION, "temperature": 0}
+    llm = ChatBedrock(**bedrock_kwargs)
+else:
+    raise ValueError(f"Unsupported LLM_PROVIDER: {LLM_PROVIDER}")
 
 # Initialize memory
 memory = ConversationBufferMemory(return_messages=True)

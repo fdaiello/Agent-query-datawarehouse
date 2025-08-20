@@ -1,4 +1,4 @@
-# Agent-query-datawarehouse
+# Agent-query-data warehouse
 
 This project is a GenAI-powered agent that answers natural language questions by querying a database. It is designed for extensibility and can be adapted to different database backends.
 
@@ -20,33 +20,64 @@ This version uses the **AWS Redshift Data API** to connect to Redshift Serverles
 - The agent automatically fetches schema information to help the LLM generate accurate queries.
 - Conversation history is maintained for context.
 
-## Adapting to Other Databases
 
-Current code support Redsfhit and Azure SQL.
-For other versions, write a new db_utils_<your_db> code
-Adjust needed environment variables.
-Change Agent.py line 9 to adjust to your library:
+## Database Backend Support
 
-   from db_utils_redshift ...
+This app was originally created to work with AWS Redshift using the Redshift Data API. All core logic and schema extraction was first designed for Redshift.
 
-For Azure SQL you need to install a driver
+Later, support for Azure SQL Server was added by creating a separate `db_utils_azure.py` library. The app can now be extended to other databases by implementing a new `db_utils_<your_db>.py` module and updating the import in `Agent.py`.
 
-   brew tap microsoft/mssql-release https://github.com/Microsoft/homebrew-mssql-release
-   brew update
-   ACCEPT_EULA=Y brew install msodbcsql18
+### How to Switch Database Backends
+
+1. For Redshift, ensure you are importing from `db_utils_redshift` in `Agent.py`:
+   ```python
+   from db_utils_redshift import ...
+   ```
+
+2. For Azure SQL Server, import from `db_utils_azure`:
+   ```python
+   from db_utils_azure import ...
+   ```
+
+3. For other databases, create a new `db_utils_<your_db>.py` with the required functions (`get_tables`, `get_columns`, `query_database`, etc.), and update the import in `Agent.py` accordingly.
+
+### Azure SQL Server Setup
+
+To use Azure SQL Server, you need to install the ODBC driver:
+```sh
+brew tap microsoft/mssql-release https://github.com/Microsoft/homebrew-mssql-release
+brew update
+ACCEPT_EULA=Y brew install msodbcsql18
+```
+
+Update your `.env` file with the correct Azure SQL connection variables.
 
 
 ## Setup
 1. Clone the repository.
-2. Create a `.env` file with your AWS and Redshift credentials:
+2. Create a `.env` file with your credentials and model configuration:
    ```ini
+   # AWS Redshift
    AWS_REGION=your-region
    REDSHIFT_WORKGROUP_NAME=your-workgroup
    REDSHIFT_DATABASE=your-database
    REDSHIFT_SCHEMA=your-schema
    AWS_ACCESS_KEY_ID=your-access-key
    AWS_SECRET_ACCESS_KEY=your-secret-key
+
+   # OpenAI
    OPENAI_API_KEY=your-openai-key
+
+   # LLM Provider and Model Selection
+   # Choose which LLM provider and model to use:
+   # Supported providers: openai, bedrock
+   LLM_PROVIDER=openai
+   LLM_MODEL=gpt-4o
+
+   # For AWS Bedrock (if LLM_PROVIDER=bedrock)
+   BEDROCK_PROVIDER=anthropic         # e.g., anthropic, meta, amazon, etc.
+   BEDROCK_REGION=us-east-1
+   BEDROCK_INFERENCE_PROFILE_ID=your-inference-profile-id-or-arn
    ```
 3. Install dependencies:
    ```sh
@@ -54,8 +85,33 @@ For Azure SQL you need to install a driver
    ```
 4. Run the agent:
    ```sh
-   python src/sql_agent_rda.py
+   python src/Agent.py
    ```
+
+
+## Model and Provider Configuration
+
+You can select which LLM provider and model to use by setting the following environment variables in your `.env` file:
+
+- `LLM_PROVIDER`: Set to `openai` to use OpenAI models, or `bedrock` to use AWS Bedrock models.
+- `LLM_MODEL`: The model name for OpenAI (e.g., `gpt-4o`, `gpt-4.1`).
+- `BEDROCK_PROVIDER`: The model provider for Bedrock (e.g., `anthropic`, `meta`, `amazon`).
+- `BEDROCK_REGION`: AWS region for Bedrock (default: `us-east-1`).
+- `BEDROCK_INFERENCE_PROFILE_ID`: (Optional) The inference profile ID or ARN for Bedrock models that require it.
+
+Example for OpenAI:
+```ini
+LLM_PROVIDER=openai
+LLM_MODEL=gpt-4o
+```
+
+Example for AWS Bedrock (with inference profile):
+```ini
+LLM_PROVIDER=bedrock
+BEDROCK_PROVIDER=anthropic
+BEDROCK_REGION=us-east-1
+BEDROCK_INFERENCE_PROFILE_ID=arn:aws:bedrock:us-east-1:840245022720:inference-profile/us.anthropic.claude-3-5-sonnet-20241022-v2:0
+```
 
 ## Comments
 - Schema should use names that are clear. If further data is needed use database COMMENT on schema, table and column level to describe them. If you wish to remove tables from queries, add comment with 'hidden' text.

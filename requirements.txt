@@ -1,4 +1,5 @@
 langchain
+langchain-aws
 openai
 langchain-openai
 boto3
