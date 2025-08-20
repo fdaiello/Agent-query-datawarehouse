@@ -25,7 +25,7 @@ class State(TypedDict):
     table_list: List[str]
 
 # Initialize the LLM
-llm = ChatOpenAI(model="gpt-4o", temperature=0)
+llm = ChatOpenAI(model="gpt-4.1", temperature=0)
 
 # Initialize memory
 memory = ConversationBufferMemory(return_messages=True)
