@@ -102,6 +102,7 @@ def get_columns(schema: str) -> List[Dict[str, str]]:
             ON d.objoid = cls.oid
         AND d.objsubid = c.ordinal_position
         WHERE c.table_schema = '{schema}'
+        AND column_comment IS NULL or column_comment != 'hidden'
         ORDER BY c.table_name, c.ordinal_position;
     """
     try:
