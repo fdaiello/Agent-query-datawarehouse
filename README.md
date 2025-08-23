@@ -1,3 +1,26 @@
+## Hybrid SQL & RAG Agent
+
+This version extends the agent to support querying both structured data (using SQL) and unstructured data (using Retrieval-Augmented Generation, RAG).
+
+- The agent automatically decides, based on the user's query, whether to use SQL (for structured database tables) or RAG (for unstructured/document data).
+- RAG queries are powered by AWS Bedrock Knowledge Bases, retrieving results from a vector store.
+
+### How it works
+
+1. The agent analyzes the user's question and determines if it can be answered using SQL (based on available tables/columns).
+2. If not, it routes the query to RAG, leveraging AWS Bedrock Knowledge Bases for semantic search and generation from unstructured data.
+3. The user receives a unified answer, regardless of the underlying data source.
+
+### Requirements
+
+- AWS Bedrock Knowledge Base must be configured and accessible.
+- Environment variables for database and AWS configuration must be set.
+
+### Example
+
+Ask questions about your database or general knowledge. The agent will choose the best strategy automatically.
+
+---
 ## AWS Redshift: Native and External Tables Support
 
 This version supports querying both native Redshift tables and external tables defined via AWS Glue Data Catalog. External tables are typically created from files uploaded to an S3 bucket.
