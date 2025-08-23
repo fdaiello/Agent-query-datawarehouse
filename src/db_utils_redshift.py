@@ -30,102 +30,9 @@ def get_tables():
     external = get_external_tables()
     return native + external
 
-def get_schema_comment() -> str:
+def execute_redshift_query(sql: str) -> List[Dict[str, str]]:
     """
-    Returns the comment for the given schema, or an empty string if none exists.
-    """
-    schema = REDSHIFT_SCHEMA
-    sql = f"""
-    SELECT
-        d.description AS schema_comment
-    FROM pg_catalog.pg_namespace n
-    LEFT JOIN pg_catalog.pg_description d
-        ON n.oid = d.objoid
-    WHERE n.nspname = '{schema}'
-    """
-    try:
-        res = redshift_client.execute_statement(
-            WorkgroupName=REDSHIFT_WORKGROUP_NAME,
-            Database=REDSHIFT_DATABASE,
-            Sql=sql
-        )
-        query_id = res["Id"]
-        while True:
-            status = redshift_client.describe_statement(Id=query_id)
-            if status["Status"] in ["FINISHED", "FAILED", "ABORTED"]:
-                break
-        if status["Status"] != "FINISHED":
-            return ""
-        result = redshift_client.get_statement_result(Id=query_id)
-        if result["Records"]:
-            return result["Records"][0][0].get("stringValue", "")
-        return ""
-    except Exception:
-        return ""
-    
-def get_native_tables() -> List[Dict[str, str]]:
-    """
-    Returns a string with one line for each database table: table_name -- table_comment
-    Only includes tables with a non-null comment.
-    """
-    schema = REDSHIFT_SCHEMA
-    sql = f"""
-    SELECT
-        '{schema}.' + c.relname AS table_name,
-        obj_description(c.oid) AS table_comment
-    FROM pg_namespace n
-    JOIN pg_class c ON c.relnamespace = n.oid
-    WHERE c.relkind = 'r'
-    AND n.nspname = '{schema}'
-    AND (table_comment IS NULL OR table_comment != 'hidden');
-    """
-    try:
-        res = redshift_client.execute_statement(
-            WorkgroupName=REDSHIFT_WORKGROUP_NAME,
-            Database=REDSHIFT_DATABASE,
-            Sql=sql
-        )
-        query_id = res["Id"]
-        while True:
-            status = redshift_client.describe_statement(Id=query_id)
-            if status["Status"] in ["FINISHED", "FAILED", "ABORTED"]:
-                break
-        if status["Status"] != "FINISHED":
-            return []
-        result = redshift_client.get_statement_result(Id=query_id)
-        columns = [col["name"] for col in result["ColumnMetadata"]]
-        rows = [
-                dict(zip(columns, [v.get("stringValue", "") for v in row]))
-                for row in result["Records"]
-            ]
-        return rows
-    except Exception:
-        return []
-    
-def get_native_columns() -> List[Dict[str, str]]:
-    """
-    Fetch table and column info from Redshift and return as a list of dicts.
-    Each dict contains table_name, column_name, and data_type.
-    """
-    schema = REDSHIFT_SCHEMA
-    sql = f"""
-        SELECT
-            '{schema}.' + c.table_name as table_name,
-            c.column_name,
-            c.data_type,
-            d.description AS column_comment
-        FROM information_schema.columns c
-        JOIN pg_catalog.pg_class cls
-            ON cls.relname = c.table_name
-        JOIN pg_catalog.pg_namespace ns
-            ON ns.nspname = c.table_schema
-        AND ns.oid = cls.relnamespace
-        LEFT JOIN pg_catalog.pg_description d
-            ON d.objoid = cls.oid
-        AND d.objsubid = c.ordinal_position
-        WHERE c.table_schema = '{schema}'
-        AND column_comment IS NULL or column_comment != 'hidden'
-        ORDER BY c.table_name, c.ordinal_position;
+    Helper to execute a SQL query against Redshift and return results as a list of dicts.
     """
     try:
         res = redshift_client.execute_statement(
@@ -149,6 +56,69 @@ def get_native_columns() -> List[Dict[str, str]]:
         return rows
     except Exception:
         return []
+
+def get_schema_comment() -> str:
+    """
+    Returns the comment for the given schema, or an empty string if none exists.
+    """
+    schema = REDSHIFT_SCHEMA
+    sql = f"""
+SELECT
+    d.description AS schema_comment
+FROM pg_catalog.pg_namespace n
+LEFT JOIN pg_catalog.pg_description d
+    ON n.oid = d.objoid
+WHERE n.nspname = '{schema}'
+"""
+    rows = execute_redshift_query(sql)
+    if rows and "schema_comment" in rows[0]:
+        return rows[0]["schema_comment"]
+    return ""
+    
+def get_native_tables() -> List[Dict[str, str]]:
+    """
+    Returns a string with one line for each database table: table_name -- table_comment
+    Only includes tables with a non-null comment.
+    """
+    schema = REDSHIFT_SCHEMA
+    sql = f"""
+SELECT
+    CONCAT('{schema}.', c.relname) AS table_name,
+    obj_description(c.oid) AS table_comment
+FROM pg_namespace n
+JOIN pg_class c ON c.relnamespace = n.oid
+WHERE c.relkind = 'r'
+    AND n.nspname = '{schema}'
+    AND (table_comment IS NULL OR table_comment != 'hidden');
+"""
+    return execute_redshift_query(sql)
+    
+def get_native_columns() -> List[Dict[str, str]]:
+    """
+    Fetch table and column info from Redshift and return as a list of dicts.
+    Each dict contains table_name, column_name, and data_type.
+    """
+    schema = REDSHIFT_SCHEMA
+    sql = f"""
+SELECT
+    CONCAT('{schema}.', c.table_name) as table_name,
+    c.column_name,
+    c.data_type,
+    d.description AS column_comment
+FROM information_schema.columns c
+JOIN pg_catalog.pg_class cls
+    ON cls.relname = c.table_name
+JOIN pg_catalog.pg_namespace ns
+    ON ns.nspname = c.table_schema
+    AND ns.oid = cls.relnamespace
+LEFT JOIN pg_catalog.pg_description d
+    ON d.objoid = cls.oid
+    AND d.objsubid = c.ordinal_position
+WHERE c.table_schema = '{schema}'
+    AND column_comment IS NULL or column_comment != 'hidden'
+ORDER BY c.table_name, c.ordinal_position;
+"""
+    return execute_redshift_query(sql)
 
 def filter_columns(columns: List[Dict[str, str]], table_names: List[str]) -> List[Dict[str, str]]:
     """

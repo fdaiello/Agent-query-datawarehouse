@@ -2,10 +2,10 @@ import os
 from typing import TypedDict, Annotated, List
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langgraph.graph import StateGraph, END
-from langchain_openai import ChatOpenAI
 from dotenv import load_dotenv
 from langchain.memory import ConversationBufferMemory
 load_dotenv()
+from llm_utils import get_llm
 from db_utils_redshift import get_columns, get_tables, query_database, get_schema_comment, DB_PLATFORM, DB_SPECIFICS
 from schema_vector import create_vectorstore, search_vectorstore
 from schema_format import format_schema_description
@@ -25,23 +25,7 @@ class State(TypedDict):
     table_list: List[str]
 
 
-# Initialize the LLM based on environment variables
-LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai").lower()
-
-llm = None
-if LLM_PROVIDER == "openai":
-    from langchain_openai import ChatOpenAI
-    OPENAI_MODEL_ID = os.getenv("OPENAI_MODEL_ID", "gpt-4.1")
-    llm = ChatOpenAI(model=OPENAI_MODEL_ID, temperature=0)
-elif LLM_PROVIDER == "bedrock":
-    from langchain_aws import ChatBedrock
-    BEDROCK_PROVIDER = os.getenv("BEDROCK_PROVIDER", "anthropic")
-    BEDROCK_REGION = os.getenv("BEDROCK_REGION", "us-east-1")
-    BEDROCK_INFERENCE_PROFILE_ID = os.getenv("BEDROCK_INFERENCE_PROFILE_ID")
-    bedrock_kwargs = {"model_id": BEDROCK_INFERENCE_PROFILE_ID, "provider": BEDROCK_PROVIDER, "region": BEDROCK_REGION, "temperature": 0}
-    llm = ChatBedrock(**bedrock_kwargs)
-else:
-    raise ValueError(f"Unsupported LLM_PROVIDER: {LLM_PROVIDER}")
+llm = get_llm()
 
 # Initialize memory
 memory = ConversationBufferMemory(return_messages=True)
