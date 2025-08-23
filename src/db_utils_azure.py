@@ -8,7 +8,7 @@ AZURE_SQL_DATABASE = os.getenv("AZURE_SQL_DATABASE")
 AZURE_SQL_USERNAME = os.getenv("AZURE_SQL_USERNAME")
 AZURE_SQL_PASSWORD = os.getenv("AZURE_SQL_PASSWORD")
 AZURE_SQL_DRIVER = os.getenv("AZURE_SQL_DRIVER", "ODBC Driver 18 for SQL Server")
-DB_SCHEMA = os.getenv("AZURE_SQL_SCHEMA", 'dbo')
+AZURE_SQL_SCHEMA = os.getenv("AZURE_SQL_SCHEMA", 'dbo')
 DB_PLATFORM = "Azure SQL Server"
 DB_SPECIFICS = "Never use LIMIT — use TOP (n)."
 
@@ -22,10 +22,11 @@ def get_connection():
 	)
 	return pyodbc.connect(conn_str)
 
-def get_schema_comment(schema: str) -> str:
+def get_schema_comment() -> str:
 	"""
 	Returns the comment for the given schema, or an empty string if none exists.
 	"""
+	schema = AZURE_SQL_SCHEMA
 	sql = """
 	SELECT CAST(ep.value AS NVARCHAR(MAX)) AS schema_comment
 	FROM sys.schemas s
@@ -43,10 +44,11 @@ def get_schema_comment(schema: str) -> str:
 		print("Exception occurred:", e)
 		return ""
 
-def get_tables(schema: str) -> List[Dict[str, str]]:
+def get_tables() -> List[Dict[str, str]]:
     """
     Returns a list of tables and their comments in the given schema.
     """
+	schema = AZURE_SQL_SCHEMA
     sql = """
     SELECT t.name AS table_name,
            CAST(ep.value AS NVARCHAR(MAX)) AS table_comment
@@ -70,10 +72,11 @@ def get_tables(schema: str) -> List[Dict[str, str]]:
         print("Exception occurred:", e)
         return []
 
-def get_columns(schema: str) -> List[Dict[str, str]]:
+def get_columns() -> List[Dict[str, str]]:
 	"""
 	Returns a list of columns and their comments for all tables in the given schema.
 	"""
+	schema = AZURE_SQL_SCHEMA
 	sql = """
 	SELECT t.name AS table_name,
 		   c.name AS column_name,

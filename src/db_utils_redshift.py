@@ -2,19 +2,39 @@ import os
 import boto3
 from typing import List, Dict
 
-DB_SCHEMA = os.getenv("REDSHIFT_SCHEMA", 'public')
+REDSHIFT_SCHEMA = os.getenv("REDSHIFT_SCHEMA", 'public')
 AWS_REGION = os.getenv("AWS_REGION")
 REDSHIFT_WORKGROUP_NAME = os.getenv("REDSHIFT_WORKGROUP_NAME")
 REDSHIFT_DATABASE = os.getenv("REDSHIFT_DATABASE")
+REDSHIFT_AWSCATALOG_DATABASE=os.getenv("REDSHIFT_AWSCATALOG_DATABASE", '')
 DB_PLATFORM = "AWS Redshift"
 DB_SPECIFICS = ""
 
 redshift_client = boto3.client("redshift-data", region_name=AWS_REGION)
 
-def get_schema_comment(schema: str) -> str:
+def get_columns():
+    """
+    Returns the result of get_native_columns concatenated with get_external_columns.
+    Signature matches get_native_columns.
+    """
+    native = get_native_columns()
+    external = get_external_columns()
+    return native + external
+
+def get_tables():
+    """
+    Returns the result of get_native_tables concatenated with get_external_tables.
+    Signature matches get_native_tables.
+    """
+    native = get_native_tables()
+    external = get_external_tables()
+    return native + external
+
+def get_schema_comment() -> str:
     """
     Returns the comment for the given schema, or an empty string if none exists.
     """
+    schema = REDSHIFT_SCHEMA
     sql = f"""
     SELECT
         d.description AS schema_comment
@@ -43,14 +63,15 @@ def get_schema_comment(schema: str) -> str:
     except Exception:
         return ""
     
-def get_tables(schema: str) -> List[Dict[str, str]]:
+def get_native_tables() -> List[Dict[str, str]]:
     """
     Returns a string with one line for each database table: table_name -- table_comment
     Only includes tables with a non-null comment.
     """
+    schema = REDSHIFT_SCHEMA
     sql = f"""
     SELECT
-        c.relname AS table_name,
+        '{schema}.' + c.relname AS table_name,
         obj_description(c.oid) AS table_comment
     FROM pg_namespace n
     JOIN pg_class c ON c.relnamespace = n.oid
@@ -78,17 +99,18 @@ def get_tables(schema: str) -> List[Dict[str, str]]:
                 for row in result["Records"]
             ]
         return rows
-    except Exception as e:
+    except Exception:
         return []
     
-def get_columns(schema: str) -> List[Dict[str, str]]:
+def get_native_columns() -> List[Dict[str, str]]:
     """
     Fetch table and column info from Redshift and return as a list of dicts.
     Each dict contains table_name, column_name, and data_type.
     """
+    schema = REDSHIFT_SCHEMA
     sql = f"""
         SELECT
-            c.table_name,
+            '{schema}.' + c.table_name as table_name,
             c.column_name,
             c.data_type,
             d.description AS column_comment
@@ -167,3 +189,51 @@ def query_database(sql: str) -> str:
         return str(rows)
     except Exception as e:
         return f"Error running query: {str(e)}"
+
+def get_external_tables() -> List[Dict[str, str]]:
+    """
+    Returns a list of dicts with table names and their description from AWS Glue Data Catalog for the given database.
+    Each dict contains 'table_name' and 'table_description'. If no description exists, the list will be empty.
+    """
+    database_name = REDSHIFT_AWSCATALOG_DATABASE
+    region_name = AWS_REGION
+    if not database_name or database_name == '':
+        return []
+    glue = boto3.client('glue', region_name=region_name)
+    tables = []
+    paginator = glue.get_paginator('get_tables')
+    for page in paginator.paginate(DatabaseName=database_name):
+        tables.extend(page['TableList'])
+    result = []
+    for table in tables:
+        name = table.get('Name', '')
+        desc = table.get('Description', '')
+        result.append({'table_name': 'awsdatacatalog."' + database_name + '".' + name, 'table_comment': desc})
+    return result
+
+def get_external_columns() -> List[Dict[str, str]]:
+    """
+    Returns a list of dicts with all columns of AWS Glue Data Catalog for the given database.
+    Each dict contains: table_name, column_name, data_type, column_comment.
+    """
+    database_name = REDSHIFT_AWSCATALOG_DATABASE
+    region_name = AWS_REGION 
+    if not database_name or database_name == '':
+        return []   
+    glue = boto3.client('glue', region_name=region_name)
+    columns = []
+    paginator = glue.get_paginator('get_tables')
+    for page in paginator.paginate(DatabaseName=database_name):
+        for table in page['TableList']:
+            table_name = table.get('Name', '')
+            for col in table.get('StorageDescriptor', {}).get('Columns', []):
+                col_name = col.get('Name', '')
+                data_type = col.get('Type', '')
+                col_comment = col.get('Comment', '')
+                columns.append({
+                    'table_name': table_name,
+                    'column_name': col_name,
+                    'data_type': data_type,
+                    'column_comment': col_comment
+                })
+    return columns

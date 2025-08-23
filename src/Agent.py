@@ -6,7 +6,7 @@ from langchain_openai import ChatOpenAI
 from dotenv import load_dotenv
 from langchain.memory import ConversationBufferMemory
 load_dotenv()
-from db_utils_redshift import get_columns, get_tables, query_database, get_schema_comment, DB_SCHEMA, DB_PLATFORM, DB_SPECIFICS
+from db_utils_redshift import get_columns, get_tables, query_database, get_schema_comment, DB_PLATFORM, DB_SPECIFICS
 from schema_vector import create_vectorstore, search_vectorstore
 from schema_format import format_schema_description
 
@@ -51,7 +51,6 @@ system_message ="""You are a helpful assistant.
 Generate syntactically correct SQL queries based on the user's question.
 Target database: {db_platform}. {db_specifics}
 Unless the user specifies in their question a specific number of examples they wish to obtain, always limit your query to at most 10 results.
-Database has several schemas. Always work on the schema {schema}.
 Pay attention to use only the column names that you can see in the schema description.
 Never query for all the columns from a specific table, only ask for a few relevant columns given the question.
 Domain specific knowledge:{schema_comments}
@@ -72,10 +71,10 @@ class QueryOutput(TypedDict):
     query: Annotated[str, ..., "Syntactically valid SQL query."]
 
 # Fetch schema_info and build vector store once at startup
-TABLE_INFO = get_tables(DB_SCHEMA)
-SCHEMA_COMMENTS = get_schema_comment(DB_SCHEMA)
+TABLE_INFO = get_tables()
+SCHEMA_COMMENTS = get_schema_comment()
 TABLE_VECTORSTORE = create_vectorstore(TABLE_INFO)
-COLUMNS_INFO = get_columns(DB_SCHEMA)
+COLUMNS_INFO = get_columns()
 
 # Step 1 (Vector Search): use vector search to select relevant table
 def select_tables_vector(state: State) -> State:
@@ -131,7 +130,6 @@ def generate_query(state: State) -> State:
             "input": state["question"],
             "history": history,
             "db_schema_str": db_schema_str,
-            "schema": DB_SCHEMA,
             "db_platform": DB_PLATFORM,
             "db_specifics": DB_SPECIFICS,
             "schema_comments": SCHEMA_COMMENTS

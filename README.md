@@ -1,3 +1,27 @@
+## AWS Redshift: Native and External Tables Support
+
+This version supports querying both native Redshift tables and external tables defined via AWS Glue Data Catalog. External tables are typically created from files uploaded to an S3 bucket.
+
+### Using External Tables
+
+1. **Upload your data files to an S3 bucket.**
+2. **Run the AWS Glue Crawler** on the uploaded files to create/update the Data Catalog database and tables.
+3. **Set the environment variable `REDSHIFT_AWSCATALOG_DATABASE`** to the name of the database created/populated by the Glue Crawler. This enables the application to query external tables in addition to native Redshift tables.
+4. Using the external database is optional. If you do not set `REDSHIFT_AWSCATALOG_DATABASE`, only native Redshift tables will be used.
+
+### Environment Variable Example
+
+```
+REDSHIFT_AWSCATALOG_DATABASE=your_glue_database_name
+```
+
+### Summary
+
+- Native tables: Standard Redshift tables in your cluster.
+- External tables: Tables defined in AWS Glue Data Catalog, typically from S3 files.
+- Both types can be queried if `REDSHIFT_AWSCATALOG_DATABASE` is set.
+
+For more details, see the AWS Glue and Redshift documentation.
 # Agent-query-data warehouse
 
 This project is a GenAI-powered agent that answers natural language questions by querying a database. It is designed for extensibility and can be adapted to different database backends.
