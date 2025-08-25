@@ -1,4 +1,3 @@
-import os
 from typing import TypedDict, Annotated, List, Literal
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langgraph.graph import StateGraph, END
@@ -10,6 +9,7 @@ from db_utils_redshift import get_columns, get_tables, query_database, get_schem
 from schema_vector import create_vectorstore, search_vectorstore
 from schema_format import format_schema_description
 from aws_kb_utils import retrieve_and_generate, format_citations
+from typing import cast
 
 # Utility to ensure history is always List[str]
 def ensure_str_list(history) -> list[str]:
@@ -79,6 +79,7 @@ def route_query(state: State) -> State:
     prompt_value = prompt.invoke({})
     structured_llm = llm.with_structured_output(QueryRouterOutput)
     result = structured_llm.invoke(prompt_value)
+    result = cast(QueryRouterOutput, result)
     return {
         **state,
         "query_type": result["query_type"]
@@ -149,6 +150,7 @@ def generate_query(state: State) -> State:
     )
     structured_llm = llm.with_structured_output(QueryOutput)
     result = structured_llm.invoke(prompt_value)
+    result = cast(QueryOutput, result)
     new_history: list[str] = history + [f"User: {state['question']}", f"SQL: {result['query']}"]
     return {
         **state,
@@ -192,7 +194,6 @@ answer_prompt_template = ChatPromptTemplate(
         ("user", answer_user_prompt)
     ]
 )
-
 
 # Function to generate the answer
 def generate_answer(state: State) -> State:

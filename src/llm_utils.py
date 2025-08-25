@@ -1,6 +1,7 @@
 import os
+from langchain_core.language_models import BaseChatModel
 
-def get_llm():
+def get_llm() -> BaseChatModel:
     """
     Initialize and return the LLM object based on environment variables.
     Supports OpenAI and Bedrock providers.

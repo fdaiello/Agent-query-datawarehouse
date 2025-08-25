@@ -2,7 +2,7 @@
 AWS Knowledge Base utilities for RAG functionality.
 """
 import boto3
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any
 from botocore.exceptions import ClientError
 import os
 
