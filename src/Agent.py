@@ -10,6 +10,7 @@ from schema_vector import create_vectorstore, search_vectorstore
 from schema_format import format_schema_description
 from aws_kb_utils import retrieve_and_generate, format_citations
 from typing import cast
+from pydantic import BaseModel
 
 # Utility to ensure history is always List[str]
 def ensure_str_list(history) -> list[str]:
@@ -53,11 +54,9 @@ query_prompt_template = ChatPromptTemplate(
 
 class TableSubsetOutput(TypedDict):
     tables: Annotated[str, ..., "Subset of schema_info with only relevant tables for the query."]
-
-class QueryOutput(TypedDict):
-    query: Annotated[str, ..., "Syntactically valid SQL query."]
-
-class QueryRouterOutput(TypedDict):
+class QueryOutput(BaseModel):
+    query: str
+class QueryRouterOutput(BaseModel):
     query_type: Literal["sql", "rag"]
 
 # Fetch schema_info and build vector store once at startup
@@ -82,7 +81,7 @@ def route_query(state: State) -> State:
     result = cast(QueryRouterOutput, result)
     return {
         **state,
-        "query_type": result["query_type"]
+        "query_type": result.query_type
         }
 
 # Step 1 (Vector Search): use vector search to select relevant table
@@ -93,10 +92,6 @@ def select_tables_vector(state: State) -> State:
     new_history: list[str] = history + [f"User: {state['question']}", f"Relevant tables: {relevant_subset}"]
     return {
         **state,
-        "question": state["question"],
-        "query": state["query"],
-        "result": state["result"],
-        "answer": state["answer"],
         "history": ensure_str_list(new_history),
         "table_list": relevant_subset
     }
@@ -113,20 +108,17 @@ def select_tables_llm(state: State) -> State:
     ])
     prompt_value = prompt.invoke({})
     result = llm.invoke(prompt_value).content
+    
     # Parse result as comma-separated list of table names
     relevant_subset: List[str] = []
     if isinstance(result, str):
         relevant_subset = [t.strip() for t in result.split(",") if t.strip()]
+
     new_history: list[str] = history + [f"User: {state['question']}", f"Relevant tables: {relevant_subset}"]
     return {
-        "question": state["question"],
-        "query": state.get("query", ""),
-        "result": state.get("result", ""),
-        "answer": state.get("answer", ""),
+        **state,
         "history": ensure_str_list(new_history),
-        "table_list": relevant_subset,
-        "query_type": state.get("query_type", "sql"),
-        "rag_answer": state.get("rag_answer", "")
+        "table_list": relevant_subset
     }
 
 # Step 2: Generate SQL query using schema subset
@@ -151,35 +143,29 @@ def generate_query(state: State) -> State:
     structured_llm = llm.with_structured_output(QueryOutput)
     result = structured_llm.invoke(prompt_value)
     result = cast(QueryOutput, result)
-    new_history: list[str] = history + [f"User: {state['question']}", f"SQL: {result['query']}"]
+    new_history: list[str] = history + [f"User: {state['question']}", f"SQL: {result.query}"]
     return {
         **state,
-        "question": state["question"],
-        "query": result["query"],
-        "result": state.get("result", ""),
-        "answer": state.get("answer", ""),
+        "query": result.query,
         "history": ensure_str_list(new_history),
-        "table_list": table_list,
-        "query_type": state.get("query_type", "sql"),
-        "rag_answer": state.get("rag_answer", "")
+        "table_list": table_list
     }
 
 # Function to execute the SQL query
 def execute_query(state: State) -> State:
     """Execute the SQL query using Redshift Data API and return the result."""
-    result = query_database(state["query"])
-    result_str = str(result)
+    try:
+        result = query_database(state["query"])
+        result_str = str(result)
+    except Exception as e:
+        result_str = f"Error executing SQL query: {str(e)}"
+        
     history: list[str] = ensure_str_list(state.get("history", []))
     new_history: list[str] = history + [f"SQL: {state['query']}", f"Result: {result_str}"]
     return {
-        "question": state["question"],
-        "query": state["query"],
+        **state,
         "result": result_str,
-        "answer": state.get("answer", ""),
-        "history": ensure_str_list(new_history),
-        "table_list": state.get("table_list", []),
-        "query_type": state.get("query_type", "sql"),
-        "rag_answer": state.get("rag_answer", "")
+        "history": ensure_str_list(new_history)
     }
 
 # Define the prompt for generating the answer, including history
@@ -209,14 +195,9 @@ def generate_answer(state: State) -> State:
     answer = llm.invoke(prompt_value).content
     new_history: list[str] = history + [f"Answer: {answer}"]
     return {
-        "question": str(state["question"]),
-        "query": str(state.get("query", "")),
-        "result": str(state.get("result", "")),
+        **state,
         "answer": str(answer),
-        "history": ensure_str_list(new_history),
-        "table_list": state.get("table_list", []),
-        "query_type": state.get("query_type", "sql"),
-        "rag_answer": state.get("rag_answer", "")
+        "history": ensure_str_list(new_history)
     }
 
 # RAG Branch Functions
@@ -243,13 +224,8 @@ def query_knowledge_base(state: State) -> State:
         new_history: list[str] = history + [f"User: {question}", f"RAG Answer: {full_rag_answer}"]
         
         return {
-            "question": state["question"],
-            "query": state.get("query", ""),
-            "result": state.get("result", ""),
+            **state,
             "answer": full_rag_answer,
-            "history": ensure_str_list(new_history),
-            "table_list": state.get("table_list", []),
-            "query_type": state.get("query_type", "rag"),
             "rag_answer": full_rag_answer
         }
         
@@ -258,13 +234,9 @@ def query_knowledge_base(state: State) -> State:
         new_history: list[str] = history + [f"User: {question}", f"Error: {error_message}"]
         
         return {
-            "question": state["question"],
-            "query": state.get("query", ""),
-            "result": state.get("result", ""),
+            **state,
             "answer": error_message,
             "history": ensure_str_list(new_history),
-            "table_list": state.get("table_list", []),
-            "query_type": state.get("query_type", "rag"),
             "rag_answer": error_message
         }
 
